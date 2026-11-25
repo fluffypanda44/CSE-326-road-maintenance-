@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Municipal Road Maintenance Management Platform for reporting, prioritizing, assigning, and resolving road infrastructure issues.">
+  <title>Road Maintenance Management Platform</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <h1 class="site-title">Road Maintenance Management Platform</h1>
+        <p class="site-subtitle">Municipal Public Works &mdash; Issue Reporting, Dispatch &amp; Resolution Tracking</p>
+      </div>
+
+      <nav aria-label="Primary sections">
+        <div role="tablist" aria-label="Platform sections" class="tablist">
+          <button
+            type="button"
+            role="tab"
+            id="tab-report"
+            aria-selected="true"
+            aria-controls="panel-report"
+            tabindex="0"
+            class="tab-button"
+          >
+            Report Issue
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-queue"
+            aria-selected="false"
+            aria-controls="panel-queue"
+            tabindex="-1"
+            class="tab-button"
+          >
+            Priority Queue <span id="queue-count" class="tab-badge">(0)</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-records"
+            aria-selected="false"
+            aria-controls="panel-records"
+            tabindex="-1"
+            class="tab-button"
+          >
+            Resolution Records <span id="records-count" class="tab-badge">(0)</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main-content" tabindex="-1" class="main-content">
+    <div id="status-banner" role="status" aria-live="polite" class="status-banner"></div>
+
+    <!-- Tab 1: Report Issue -->
+    <section
+      id="panel-report"
+      role="tabpanel"
+      aria-labelledby="tab-report"
+      class="tab-panel"
+    >
+      <div class="panel-header">
+        <h2 id="heading-report">Report Road Issue</h2>
+        <p class="panel-intro">Submit a pothole, surface damage, broken traffic signal, or roadway hazard for municipal triage.</p>
+      </div>
+
+      <form id="report-form" class="report-form" aria-labelledby="heading-report">
+        <fieldset class="form-fieldset">
+          <legend>Issue Classification &amp; Location</legend>
+
+          <div class="field">
+            <label for="issue-type">Issue Type <span class="required-mark" aria-hidden="true">*</span></label>
+            <select id="issue-type" name="type" required data-error="issue-type-error" aria-invalid="false">
+              <option value="">Select an issue type</option>
+              <option value="Pothole">Pothole</option>
+              <option value="Damaged Road">Damaged Road</option>
+              <option value="Broken Signal">Broken Signal</option>
+              <option value="Other">Other</option>
+            </select>
+            <p id="issue-type-error" class="error-msg">Error: Please select an issue type.</p>
+          </div>
+
+          <div class="field">
+            <label for="issue-location">Location (Street or Landmark) <span class="required-mark" aria-hidden="true">*</span></label>
+            <span id="location-hint" class="hint">Enter an intersection, street address, or use GPS coordinates.</span>
+            <div class="input-with-action">
+              <input
+                type="text"
+                id="issue-location"
+                name="location"
+                required
+                minlength="3"
+                maxlength="140"
+                autocomplete="street-address"
+                aria-describedby="location-hint"
+                data-error="issue-location-error"
+                aria-invalid="false"
+                placeholder="e.g. Oak Ave &amp; 4th St"
+              >
+              <button type="button" id="gps-btn" class="btn-secondary">Use GPS</button>
+            </div>
+            <p id="issue-location-error" class="error-msg">Error: Enter a location of at least 3 characters.</p>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-fieldset">
+          <legend>Severity Level <span class="required-mark" aria-hidden="true">*</span></legend>
+          <p id="severity-hint" class="hint">Select urgency based on traffic safety impact.</p>
+          <div class="radio-group" role="radiogroup" aria-describedby="severity-hint">
+            <div class="radio-option">
+              <input type="radio" id="severity-high" name="severity" value="High" required>
+              <label for="severity-high" class="radio-label">
+                <strong>High</strong> &mdash; Immediate hazard or signal outage
+              </label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="severity-medium" name="severity" value="Medium">
+              <label for="severity-medium" class="radio-label">
+                <strong>Medium</strong> &mdash; Moderate surface damage or lane obstruction
+              </label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="severity-low" name="severity" value="Low">
+              <label for="severity-low" class="radio-label">
+                <strong>Low</strong> &mdash; Minor wear or non-urgent repair
+              </label>
+            </div>
+          </div>
+          <p id="severity-error" class="error-msg" hidden>Error: Please choose a severity level.</p>
+        </fieldset>
+
+        <fieldset class="form-fieldset">
+          <legend>Description &amp; Photographic Evidence</legend>
+
+          <div class="field">
+            <label for="issue-description">Description <span class="required-mark" aria-hidden="true">*</span></label>
+            <span id="description-hint" class="hint">Include approximate size, affected lane, or safety hazards (minimum 10 characters).</span>
+            <textarea
+              id="issue-description"
+              name="description"
+              rows="4"
+              required
+              minlength="10"
+              maxlength="600"
+              aria-describedby="description-hint"
+              data-error="issue-description-error"
+              aria-invalid="false"
+            ></textarea>
+            <p id="issue-description-error" class="error-msg">Error: Please enter at least 10 characters describing the issue.</p>
+          </div>
+
+          <div class="field">
+            <label for="issue-photo">Photograph (optional)</label>
+            <span id="photo-hint" class="hint">Attach a photo of the road issue for crew inspection.</span>
+            <input
+              type="file"
+              id="issue-photo"
+              name="photo"
+              accept="image/*"
+              aria-describedby="photo-hint"
+            >
+            <figure id="photo-preview-figure" class="photo-preview" hidden>
+              <img id="photo-preview-img" alt="Preview of uploaded road maintenance issue photograph" width="320" height="200">
+              <figcaption id="photo-preview-caption">Uploaded photograph preview</figcaption>
+              <button type="button" id="clear-photo-btn" class="btn-link">Remove photo</button>
+            </figure>
+          </div>
+        </fieldset>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Submit Issue</button>
+          <button type="reset" class="btn-secondary">Clear Form</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Tab 2: Priority Queue -->
+    <section
+      id="panel-queue"
+      role="tabpanel"
+      aria-labelledby="tab-queue"
+      class="tab-panel"
+      hidden
+    >
+      <div class="panel-header">
+        <h2>Priority Queue</h2>
+        <p class="panel-intro">Active unresolved issues automatically sorted from High to Low severity, then newest first.</p>
+      </div>
+
+      <search aria-label="Filter active issues" class="filter-bar">
+        <div class="filter-group">
+          <label for="filter-severity">Filter by Severity</label>
+          <select id="filter-severity" name="filterSeverity">
+            <option value="All">All Severities</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-status">Filter by Status</label>
+          <select id="filter-status" name="filterStatus">
+            <option value="All">All Active Statuses</option>
+            <option value="Reported">Reported</option>
+            <option value="Assigned">Assigned</option>
+            <option value="In Progress">In Progress</option>
+          </select>
+        </div>
+      </search>
+
+      <ul id="queue-list" class="queue-list" role="list"></ul>
+      <p id="queue-empty" class="empty-state" hidden>No active issues match the selected filters.</p>
+    </section>
+
+    <!-- Tab 3: Resolution Records -->
+    <section
+      id="panel-records"
+      role="tabpanel"
+      aria-labelledby="tab-records"
+      class="tab-panel"
+      hidden
+    >
+      <div class="panel-header">
+        <h2>Resolution Records</h2>
+        <p class="panel-intro">Completed road maintenance work with crew assignment, repair notes, and resolution dates.</p>
+      </div>
+
+      <div id="records-table-wrapper" class="table-wrapper">
+        <table id="records-table" class="records-table">
+          <caption>Archive of resolved municipal road maintenance issues</caption>
+          <thead>
+            <tr>
+              <th scope="col">Issue Type</th>
+              <th scope="col">Location</th>
+              <th scope="col">Photo</th>
+              <th scope="col">Assigned Crew</th>
+              <th scope="col">Resolution Note</th>
+              <th scope="col">Resolved Date</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="records-tbody"></tbody>
+        </table>
+      </div>
+      <p id="records-empty" class="empty-state" hidden>No resolved issues recorded yet.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Municipal Public Works &bull; Road Maintenance Management Platform &bull; Data stored locally in your browser</p>
+  </footer>
+
+  <!-- Native Modal Dialog for Resolution Notes -->
+  <dialog id="resolve-dialog" class="resolve-dialog" aria-labelledby="resolve-dialog-title">
+    <h2 id="resolve-dialog-title" class="dialog-title">Record Issue Resolution</h2>
+    <p id="resolve-dialog-summary" class="dialog-summary"></p>
+
+    <form method="dialog" id="resolve-form">
+      <div class="field">
+        <label for="resolution-note">Resolution Note <span class="required-mark" aria-hidden="true">*</span></label>
+        <span id="resolution-note-hint" class="hint">Describe the repair performed or final inspection outcome (at least 5 characters).</span>
+        <textarea
+          id="resolution-note"
+          name="resolutionNote"
+          rows="4"
+          required
+          minlength="5"
+          maxlength="400"
+          autofocus
+          aria-describedby="resolution-note-hint"
+        ></textarea>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" formnovalidate class="btn-secondary">Cancel</button>
+        <button type="submit" value="confirm" class="btn-primary">Save Resolution</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Native Modal Dialog for Deleting / Withdrawing Reports -->
+  <dialog id="delete-dialog" class="resolve-dialog" aria-labelledby="delete-dialog-title">
+    <h2 id="delete-dialog-title" class="dialog-title">Delete Road Report</h2>
+    <p id="delete-dialog-summary" class="dialog-summary"></p>
+
+    <form method="dialog" id="delete-form">
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" autofocus class="btn-secondary">Cancel</button>
+        <button type="submit" value="confirm" class="btn-danger">Delete Report</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
