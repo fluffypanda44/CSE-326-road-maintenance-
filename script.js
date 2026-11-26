@@ -1,378 +1,339 @@
-(() => {
-  'use strict';
+const KEY = 'road_issues_data';
+const CREWS = ['Unassigned', 'Road Crew A', 'Signal Team B', 'Maintenance Team C'];
+const STATUSES = ['Reported', 'Assigned', 'In Progress', 'Resolved'];
 
-  const KEY = 'road_maintenance_issues_v1';
-  const CREWS = ['Unassigned', 'Road Crew A', 'Signal Team B', 'Maintenance Team C'];
-  const STATUSES = ['Reported', 'Assigned', 'In Progress', 'Resolved'];
-  const ORDER = { High: 0, Medium: 1, Low: 2 };
+const form = document.getElementById('report-form');
+const banner = document.getElementById('status-banner');
+const queueList = document.getElementById('queue-list');
+const recordsTbody = document.getElementById('records-tbody');
+const resolveDialog = document.getElementById('resolve-dialog');
+const deleteDialog = document.getElementById('delete-dialog');
+const tabButtons = document.querySelectorAll('[role="tab"]');
 
-  const $ = (id) => document.getElementById(id);
-  const el = (tag, props = {}, ...kids) => {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(props)) {
-      if (v == null || v === false) continue;
-      if (k === 'text') n.textContent = v;
-      else if (k === 'class') n.className = v;
-      else if (k === 'dataset') Object.assign(n.dataset, v);
-      else if (k === 'on') Object.entries(v).forEach(([e, fn]) => n.addEventListener(e, fn));
-      else if (k in n) n[k] = v;
-      else n.setAttribute(k, v);
-    }
-    n.append(...kids.filter(Boolean));
-    return n;
-  };
+let issues = [];
+let photoData = '';
+let resolveId = null;
+let resolveSelect = null;
+let deleteId = null;
 
-  const today = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-
-  const fmtDate = (iso) => {
-    const [y, m, d] = (iso || '').split('-').map(Number);
-    return Number.isNaN(d) ? (iso || 'Unknown') : new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  };
-
-  const svg = (t, c) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" fill="#e2e8f0"/><rect y="130" width="320" height="70" fill="#334155"/><path d="M20 165h70m30 0h180" stroke="#f8fafc" stroke-width="6" stroke-dasharray="22 14"/><circle cx="160" cy="88" r="34" fill="${c}"/><text x="160" y="95" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="bold" fill="#fff">${t}</text></svg>`)}`;
-
-  const SEED = () => [
-    { id: 'ISS-1001', type: 'Broken Signal', location: 'Main St & 5th Ave', severity: 'High', description: 'Eastbound traffic signal head is completely dark during peak traffic hours, creating an intersection hazard.', photoDataUrl: svg('SIGNAL', '#b91c1c'), status: 'Assigned', crew: 'Signal Team B', reportedAt: '2026-11-24', createdAt: 1795478400000, resolutionNote: '', resolvedAt: '' },
-    { id: 'ISS-1002', type: 'Pothole', location: 'Elm Blvd near Oak Park', severity: 'Medium', description: 'Deep asphalt pothole approximately 45 cm wide in the right-hand northbound lane.', photoDataUrl: svg('POTHOLE', '#b45309'), status: 'Reported', crew: 'Unassigned', reportedAt: '2026-11-25', createdAt: 1795564800000, resolutionNote: '', resolvedAt: '' },
-    { id: 'ISS-1003', type: 'Damaged Road', location: 'River Rd Bridge Approach', severity: 'High', description: 'Cracked expansion joint and settled pavement edge along the westbound bridge apron.', photoDataUrl: svg('REPAIRED', '#15803d'), status: 'Resolved', crew: 'Road Crew A', reportedAt: '2026-11-20', createdAt: 1795132800000, resolutionNote: 'Milled damaged asphalt apron, leveled sub-base, and applied compacted hot-mix patch.', resolvedAt: '2026-11-22' },
+function starterData() {
+  return [
+    { id: 'ISS-1', type: 'Broken Signal', location: 'Main St & 5th Ave', severity: 'High', description: 'Traffic signal is out at intersection.', photo: '', status: 'Assigned', crew: 'Signal Team B', reportedDate: '2026-11-24', resolutionNote: '', resolvedDate: '' },
+    { id: 'ISS-2', type: 'Pothole', location: 'Elm Blvd near Oak Park', severity: 'Medium', description: 'Deep pothole in the right lane.', photo: '', status: 'Reported', crew: 'Unassigned', reportedDate: '2026-11-25', resolutionNote: '', resolvedDate: '' },
+    { id: 'ISS-3', type: 'Damaged Road', location: 'River Rd Bridge', severity: 'High', description: 'Cracked pavement near bridge entrance.', photo: '', status: 'Resolved', crew: 'Road Crew A', reportedDate: '2026-11-20', resolutionNote: 'Filled cracks and repaved.', resolvedDate: '2026-11-22' }
   ];
+}
 
-  const banner = $('status-banner');
-  const form = $('report-form');
-  const queueList = $('queue-list');
-  const recordsTbody = $('records-tbody');
-  const resolveDialog = $('resolve-dialog');
-  const deleteDialog = $('delete-dialog');
-  const tabs = [...document.querySelectorAll('[role="tab"]')];
-  const panels = [...document.querySelectorAll('[role="tabpanel"]')];
-  const radios = [...document.querySelectorAll('input[name="severity"]')];
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-  let issues = [];
-  let photoUrl = '';
-  let bannerTimer = 0;
-  let pendingResolve = null;
-  let pendingDelete = null;
+function make(tag, text, cls) {
+  const el = document.createElement(tag);
+  if (text) el.textContent = text;
+  if (cls) el.className = cls;
+  return el;
+}
 
-  const announce = (msg) => {
-    clearTimeout(bannerTimer);
-    banner.textContent = '';
-    requestAnimationFrame(() => {
-      banner.textContent = msg;
-      bannerTimer = setTimeout(() => { banner.textContent = ''; }, 6500);
-    });
-  };
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(issues));
+}
 
-  const save = (list) => {
-    try { localStorage.setItem(KEY, JSON.stringify(list)); return true; }
-    catch { announce('Browser storage is full. Please delete older records or use a smaller photo.'); return false; }
-  };
+function load() {
+  const saved = localStorage.getItem(KEY);
+  if (!saved) {
+    issues = starterData();
+    save();
+  } else {
+    issues = JSON.parse(saved);
+  }
+}
 
-  const load = () => {
-    try {
-      const data = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (Array.isArray(data)) return data;
-    } catch { /* use seed */ }
-    const s = SEED();
-    save(s);
-    return s;
-  };
+// Tabs
+function openTab(target) {
+  for (let i = 0; i < tabButtons.length; i++) {
+    const btn = tabButtons[i];
+    const on = btn === target;
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    btn.tabIndex = on ? 0 : -1;
+    document.getElementById(btn.getAttribute('aria-controls')).hidden = !on;
+  }
+}
 
-  // Tabs
-  const activateTab = (target, focus = false) => {
-    tabs.forEach((t) => {
-      const on = t === target;
-      t.setAttribute('aria-selected', String(on));
-      t.tabIndex = on ? 0 : -1;
-      const p = panels.find((x) => x.id === t.getAttribute('aria-controls'));
-      if (p) p.hidden = !on;
-    });
-    if (focus) target.focus();
-  };
-
-  tabs.forEach((t, i) => {
-    t.addEventListener('click', () => activateTab(t));
-    t.addEventListener('keydown', (e) => {
-      const next = { ArrowRight: (i + 1) % tabs.length, ArrowLeft: (i - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[e.key];
-      if (next !== undefined) { e.preventDefault(); activateTab(tabs[next], true); }
-    });
+for (let i = 0; i < tabButtons.length; i++) {
+  tabButtons[i].addEventListener('click', function () {
+    openTab(this);
   });
-
-  // Validation
-  const syncField = (c, force = false) => {
-    if (!c.matches?.('input, select, textarea') || c.type === 'radio' || c.type === 'file') return;
-    let bad = false;
-    try { bad = c.matches(':user-invalid'); } catch { bad = force && !c.validity.valid; }
-    if (force && !CSS.supports('selector(:user-invalid)')) {
-      c.classList.toggle('user-invalid-fallback', !c.validity.valid);
-      c.classList.toggle('user-valid-fallback', c.validity.valid);
-      bad = !c.validity.valid;
-    }
-    c.setAttribute('aria-invalid', String(bad));
-    const errId = c.dataset.error;
-    if (!errId) return;
-    const ids = (c.getAttribute('aria-describedby') || '').split(/\s+/).filter((x) => x && x !== errId);
-    if (bad) ids.push(errId);
-    if (ids.length) c.setAttribute('aria-describedby', ids.join(' '));
-    else c.removeAttribute('aria-describedby');
-  };
-
-  const syncSev = (show) => { $('severity-error').hidden = radios.some((r) => r.checked) || !show; };
-
-  form.addEventListener('blur', (e) => syncField(e.target, true), true);
-  form.addEventListener('input', (e) => e.target.hasAttribute('aria-invalid') && syncField(e.target));
-  form.addEventListener('change', (e) => (e.target.name === 'severity' ? syncSev(false) : syncField(e.target, true)));
-  form.addEventListener('invalid', (e) => {
-    if (e.target.name === 'severity') return syncSev(true);
-    e.target.classList.add('user-invalid-fallback');
-    syncField(e.target, true);
-  }, true);
-
-  // GPS & Photo
-  $('gps-btn').addEventListener('click', () => {
-    const loc = $('issue-location');
-    if (!('geolocation' in navigator)) { announce('GPS unavailable. Enter street or landmark.'); return loc.focus(); }
-    const btn = $('gps-btn');
-    btn.disabled = true;
-    btn.textContent = 'Locating...';
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const coordsTxt = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
-        loc.value = `GPS (${coordsTxt})`;
-        syncField(loc, true);
-        btn.disabled = false;
-        btn.textContent = 'Use GPS';
-        announce(`Location filled (${coordsTxt}).`);
-      },
-      () => { btn.disabled = false; btn.textContent = 'Use GPS'; announce('Unable to read GPS. Enter location manually.'); loc.focus(); },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  });
-
-  const clearPhoto = () => {
-    photoUrl = '';
-    $('issue-photo').value = '';
-    $('photo-preview-img').removeAttribute('src');
-    $('photo-preview-figure').hidden = true;
-  };
-
-  $('issue-photo').addEventListener('change', (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return clearPhoto();
-    if (!file.type.startsWith('image/')) { announce('Please choose a valid image file.'); return clearPhoto(); }
-    const r = new FileReader();
-    r.onload = (ev) => {
-      const raw = String(ev.target?.result || '');
-      const img = new Image();
-      img.onload = () => {
-        if (img.width <= 640 && raw.length <= 280000) photoUrl = raw;
-        else {
-          const s = Math.min(1, 640 / img.width);
-          const c = el('canvas', { width: Math.round(img.width * s), height: Math.round(img.height * s) });
-          c.getContext('2d')?.drawImage(img, 0, 0, c.width, c.height);
-          photoUrl = c.toDataURL('image/jpeg', 0.72);
-        }
-        $('photo-preview-img').src = photoUrl;
-        $('photo-preview-caption').textContent = `Photo attached: ${file.name}`;
-        $('photo-preview-figure').hidden = false;
-      };
-      img.onerror = clearPhoto;
-      img.src = raw;
-    };
-    r.readAsDataURL(file);
-  });
-
-  $('clear-photo-btn').addEventListener('click', () => { clearPhoto(); $('issue-photo').focus(); });
-
-  form.addEventListener('reset', () => setTimeout(() => {
-    clearPhoto();
-    $('severity-error').hidden = true;
-    ['issue-type', 'issue-location', 'issue-description'].forEach((id) => {
-      const c = $(id);
-      c.classList.remove('user-invalid-fallback', 'user-valid-fallback');
-      c.setAttribute('aria-invalid', 'false');
-      syncField(c);
-    });
-  }, 0));
-
-  form.addEventListener('submit', (e) => {
+  tabButtons[i].addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     e.preventDefault();
-    const severity = radios.find((r) => r.checked)?.value || '';
-    if (!severity) syncSev(true);
-    if (!form.checkValidity()) { form.reportValidity(); return form.querySelector(':invalid')?.focus(); }
-
-    const max = issues.reduce((a, i) => Math.max(a, Number((/^ISS-(\d+)$/.exec(i.id) || [])[1] || 1000)), 1000);
-    const issue = {
-      id: `ISS-${max + 1}`,
-      type: $('issue-type').value,
-      location: $('issue-location').value.trim(),
-      severity,
-      description: $('issue-description').value.trim(),
-      photoDataUrl: photoUrl,
-      status: 'Reported',
-      crew: 'Unassigned',
-      reportedAt: today(),
-      createdAt: Date.now(),
-      resolutionNote: '',
-      resolvedAt: '',
-    };
-    if (!save([issue, ...issues])) return;
-    issues.unshift(issue);
-    form.reset();
-    renderAll();
-    activateTab($('tab-queue'), true);
-    announce(`Submitted ${issue.id} (${issue.type} at ${issue.location}) to the Priority Queue.`);
+    const next = e.key === 'ArrowRight' ? (i + 1) % tabButtons.length : (i - 1 + tabButtons.length) % tabButtons.length;
+    openTab(tabButtons[next]);
+    tabButtons[next].focus();
   });
+}
 
-  // Render Helpers
-  const timeEl = (iso) => el('time', { dateTime: iso, text: fmtDate(iso) });
-  const delBtn = (issue, src) => el('button', {
-    type: 'button',
-    class: src === 'records' ? 'btn-danger btn-sm' : 'btn-danger',
-    text: 'Delete',
-    'aria-label': `Delete report ${issue.id}: ${issue.type} at ${issue.location}`,
-    on: { click: () => openDelete(issue.id, src) },
-  });
-  const makeSelect = (id, label, opts, val, onChange) => el('div', { class: 'control-group' },
-    el('label', { htmlFor: id, text: label }),
-    el('select', { id, name: id, on: { change: (e) => onChange(e.target) } }, ...opts.map((v) => el('option', { value: v, text: v, selected: v === val })))
+// GPS & Photo
+document.getElementById('gps-btn').addEventListener('click', function () {
+  if (!navigator.geolocation) return (banner.textContent = 'GPS not supported.');
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      document.getElementById('issue-location').value = pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4);
+      banner.textContent = 'GPS location added.';
+    },
+    function () { banner.textContent = 'Could not get GPS location.'; }
   );
+});
 
-  function renderQueue() {
-    const active = issues.filter((i) => i.status !== 'Resolved');
-    const sevF = $('filter-severity').value;
-    const statF = $('filter-status').value;
-    const list = active
-      .filter((i) => (sevF === 'All' || i.severity === sevF) && (statF === 'All' || i.status === statF))
-      .sort((a, b) => (ORDER[a.severity] ?? 9) - (ORDER[b.severity] ?? 9) || (b.createdAt || 0) - (a.createdAt || 0));
+function clearPhoto() {
+  photoData = '';
+  document.getElementById('issue-photo').value = '';
+  document.getElementById('photo-img').removeAttribute('src');
+  document.getElementById('photo-preview').hidden = true;
+}
 
-    queueList.textContent = '';
-    const empty = $('queue-empty');
-    empty.hidden = list.length > 0;
-    if (!list.length) {
-      empty.textContent = active.length ? 'No active issues match the selected filters.' : 'All caught up! There are no active issues in the Priority Queue.';
-      return;
+document.getElementById('issue-photo').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return clearPhoto();
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    photoData = e.target.result;
+    document.getElementById('photo-img').src = photoData;
+    document.getElementById('photo-caption').textContent = file.name;
+    document.getElementById('photo-preview').hidden = false;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('remove-photo-btn').addEventListener('click', clearPhoto);
+form.addEventListener('reset', clearPhoto);
+
+// Submit Issue
+form.addEventListener('submit', function (e) {
+  e.preventDefault();
+  const sev = document.querySelector('input[name="severity"]:checked').value;
+  issues.unshift({
+    id: 'ISS-' + Date.now().toString().slice(-4),
+    type: document.getElementById('issue-type').value,
+    location: document.getElementById('issue-location').value.trim(),
+    severity: sev,
+    description: document.getElementById('issue-description').value.trim(),
+    photo: photoData,
+    status: 'Reported',
+    crew: 'Unassigned',
+    reportedDate: today(),
+    resolutionNote: '',
+    resolvedDate: ''
+  });
+  save();
+  form.reset();
+  renderAll();
+  openTab(document.getElementById('tab-queue'));
+  banner.textContent = 'Issue submitted to Priority Queue.';
+});
+
+function makeSelect(id, labelText, list, current) {
+  const wrap = make('div');
+  const label = make('label', labelText);
+  label.htmlFor = id;
+  const select = make('select');
+  select.id = id;
+  for (let i = 0; i < list.length; i++) {
+    const opt = make('option', list[i]);
+    opt.value = list[i];
+    if (list[i] === current) opt.selected = true;
+    select.appendChild(opt);
+  }
+  wrap.append(label, select);
+  return { wrap: wrap, select: select };
+}
+
+function makeTime(dateStr) {
+  const t = make('time', dateStr);
+  t.setAttribute('datetime', dateStr);
+  return t;
+}
+
+// Render Queue
+function renderQueue() {
+  const sevFilter = document.getElementById('filter-severity').value;
+  const statFilter = document.getElementById('filter-status').value;
+  const rank = { High: 1, Medium: 2, Low: 3 };
+
+  const active = issues
+    .filter(function (i) {
+      return i.status !== 'Resolved' &&
+        (sevFilter === 'All' || i.severity === sevFilter) &&
+        (statFilter === 'All' || i.status === statFilter);
+    })
+    .sort(function (a, b) {
+      return rank[a.severity] - rank[b.severity] || b.reportedDate.localeCompare(a.reportedDate);
+    });
+
+  queueList.innerHTML = '';
+  document.getElementById('queue-empty').hidden = active.length > 0;
+
+  for (let i = 0; i < active.length; i++) {
+    const issue = active[i];
+    const card = make('article', '', 'box');
+
+    card.append(
+      make('h3', issue.type + ' - ' + issue.location),
+      make('span', issue.severity, 'badge ' + issue.severity.toLowerCase()),
+      make('p', issue.description)
+    );
+
+    const dl = make('dl');
+    const fields = [['ID', issue.id], ['Location', issue.location], ['Status', issue.status], ['Crew', issue.crew]];
+    for (let j = 0; j < fields.length; j++) {
+      const box = make('div');
+      box.append(make('dt', fields[j][0]), make('dd', fields[j][1]));
+      dl.appendChild(box);
+    }
+    const dateBox = make('div');
+    const ddTime = make('dd');
+    ddTime.appendChild(makeTime(issue.reportedDate));
+    dateBox.append(make('dt', 'Reported'), ddTime);
+    dl.appendChild(dateBox);
+    card.appendChild(dl);
+
+    if (issue.photo) {
+      const fig = make('figure');
+      const img = make('img');
+      img.src = issue.photo;
+      img.alt = issue.type + ' at ' + issue.location;
+      fig.append(img, make('figcaption', 'Photo for ' + issue.id));
+      card.appendChild(fig);
     }
 
-    queueList.append(...list.map((i) => el('li', {},
-      el('article', { class: 'issue-card', dataset: { severity: i.severity } },
-        el('div', { class: 'issue-header' },
-          el('h3', { class: 'issue-title', text: `${i.type} \u2014 ${i.location}` }),
-          el('span', { class: `severity-badge severity-${i.severity.toLowerCase()}`, text: `${i.severity} Severity` })
-        ),
-        el('div', { class: i.photoDataUrl ? 'issue-body has-photo' : 'issue-body' },
-          el('div', {},
-            el('p', { class: 'issue-description', text: i.description }),
-            el('dl', { class: 'issue-meta' },
-              ...[['Ticket ID', i.id], ['Location', i.location], ['Reported', timeEl(i.reportedAt)], ['Status', i.status], ['Assigned Crew', i.crew]]
-                .map(([dt, dd]) => el('div', { class: 'meta-item' }, el('dt', { text: dt }), el('dd', typeof dd === 'string' ? { text: dd } : {}, typeof dd === 'string' ? null : dd)))
-            )
-          ),
-          i.photoDataUrl && el('figure', { class: 'issue-figure' },
-            el('img', { src: i.photoDataUrl, alt: `${i.type} at ${i.location}`, width: 240, height: 152, loading: 'lazy' }),
-            el('figcaption', { text: `Photo evidence for ${i.id}` })
-          )
-        ),
-        el('div', { class: 'issue-controls' },
-          makeSelect(`assign-${i.id}`, 'Work Assignment', CREWS, i.crew, (s) => {
-            i.crew = s.value;
-            if (s.value !== 'Unassigned' && i.status === 'Reported') i.status = 'Assigned';
-            else if (s.value === 'Unassigned' && i.status === 'Assigned') i.status = 'Reported';
-            save(issues); renderAll(); announce(`Assigned ${i.id} to ${s.value}.`);
-          }),
-          makeSelect(`status-${i.id}`, 'Status', STATUSES, i.status, (s) => {
-            if (s.value === 'Resolved') return openResolve(i.id, s);
-            i.status = s.value; save(issues); renderAll(); announce(`Updated ${i.id} status to ${s.value}.`);
-          }),
-          el('div', { class: 'issue-action-group' },
-            el('button', { type: 'button', class: 'btn-primary', text: 'Mark Resolved', on: { click: () => openResolve(i.id, null) } }),
-            delBtn(i, 'queue')
-          )
-        )
-      )
-    )));
+    const row = make('div', '', 'row');
+    const crewSel = makeSelect('assign-' + issue.id, 'Work Assignment', CREWS, issue.crew);
+    crewSel.select.addEventListener('change', function () {
+      issue.crew = this.value;
+      if (issue.crew !== 'Unassigned' && issue.status === 'Reported') issue.status = 'Assigned';
+      save();
+      renderAll();
+      banner.textContent = 'Assigned ' + issue.id + ' to ' + issue.crew + '.';
+    });
+
+    const statSel = makeSelect('status-' + issue.id, 'Status', STATUSES, issue.status);
+    statSel.select.addEventListener('change', function () {
+      if (this.value === 'Resolved') return openResolve(issue, this);
+      issue.status = this.value;
+      save();
+      renderAll();
+      banner.textContent = 'Updated ' + issue.id + ' status to ' + issue.status + '.';
+    });
+
+    const resBtn = make('button', 'Mark Resolved', 'blue');
+    resBtn.type = 'button';
+    resBtn.addEventListener('click', function () { openResolve(issue, null); });
+
+    const delBtn = make('button', 'Delete', 'red');
+    delBtn.type = 'button';
+    delBtn.addEventListener('click', function () { openDelete(issue); });
+
+    row.append(crewSel.wrap, statSel.wrap, resBtn, delBtn);
+    card.appendChild(row);
+    queueList.appendChild(card);
   }
+}
 
-  function renderRecords() {
-    const done = issues.filter((i) => i.status === 'Resolved').sort((a, b) => (b.resolvedAt || '').localeCompare(a.resolvedAt || ''));
-    recordsTbody.textContent = '';
-    $('records-table-wrapper').hidden = !done.length;
-    $('records-empty').hidden = !!done.length;
-    if (!done.length) return;
+// Render Records Table
+function renderRecords() {
+  const done = issues.filter(function (i) { return i.status === 'Resolved'; });
+  recordsTbody.innerHTML = '';
+  document.getElementById('records-box').hidden = done.length === 0;
+  document.getElementById('records-empty').hidden = done.length > 0;
 
-    recordsTbody.append(...done.map((i) => el('tr', {},
-      el('td', { text: `${i.type} (${i.severity})` }),
-      el('td', { text: i.location }),
-      el('td', {}, i.photoDataUrl
-        ? el('img', { class: 'record-thumb', src: i.photoDataUrl, alt: `Resolved ${i.type} at ${i.location}`, width: 88, height: 60, loading: 'lazy' })
-        : el('span', { class: 'no-photo-text', text: 'No photo' })),
-      el('td', { text: i.crew }),
-      el('td', { text: i.resolutionNote || 'Resolved' }),
-      el('td', {}, timeEl(i.resolvedAt)),
-      el('td', {}, delBtn(i, 'records'))
-    )));
+  for (let i = 0; i < done.length; i++) {
+    const issue = done[i];
+    const tr = make('tr');
+
+    const photoTd = make('td');
+    if (issue.photo) {
+      const img = make('img', '', 'thumb');
+      img.src = issue.photo;
+      img.alt = issue.type + ' at ' + issue.location;
+      photoTd.appendChild(img);
+    } else {
+      photoTd.textContent = 'No photo';
+    }
+
+    const dateTd = make('td');
+    dateTd.appendChild(makeTime(issue.resolvedDate));
+
+    const delTd = make('td');
+    const delBtn = make('button', 'Delete', 'red');
+    delBtn.type = 'button';
+    delBtn.addEventListener('click', function () { openDelete(issue); });
+    delTd.appendChild(delBtn);
+
+    tr.append(make('td', issue.type), make('td', issue.location), photoTd, make('td', issue.crew), make('td', issue.resolutionNote), dateTd, delTd);
+    recordsTbody.appendChild(tr);
   }
+}
 
-  // Native Dialogs
-  const openResolve = (id, sel) => {
-    const i = issues.find((x) => x.id === id);
-    if (!i) return;
-    pendingResolve = { id, sel };
-    $('resolve-dialog-summary').textContent = `${i.id}: ${i.type} at ${i.location} (${i.severity} Severity)`;
-    $('resolution-note').value = '';
-    resolveDialog.returnValue = '';
-    resolveDialog.showModal();
-  };
+// Dialogs
+function openResolve(issue, sel) {
+  resolveId = issue.id;
+  resolveSelect = sel;
+  document.getElementById('resolve-summary').textContent = issue.type + ' - ' + issue.location;
+  document.getElementById('resolution-note').value = '';
+  resolveDialog.returnValue = '';
+  resolveDialog.showModal();
+}
 
-  resolveDialog.addEventListener('close', () => {
-    const res = resolveDialog.returnValue;
-    resolveDialog.returnValue = '';
-    const ctx = pendingResolve; pendingResolve = null;
-    const i = ctx && issues.find((x) => x.id === ctx.id);
-    if (!i) return;
-    if (res === 'confirm') {
-      i.status = 'Resolved';
-      i.resolutionNote = $('resolution-note').value.trim();
-      i.resolvedAt = today();
-      save(issues); renderAll(); announce(`Issue ${i.id} resolved and moved to Resolution Records.`);
-    } else if (ctx.sel) ctx.sel.value = i.status;
-  });
-
-  const openDelete = (id, src) => {
-    const i = issues.find((x) => x.id === id);
-    if (!i) return;
-    pendingDelete = { id, src };
-    $('delete-dialog-summary').textContent = `${i.id}: ${i.type} at ${i.location}. ${i.status === 'Resolved' ? 'This resolved record will be permanently removed.' : 'This active report will be withdrawn and permanently removed.'}`;
-    deleteDialog.returnValue = '';
-    deleteDialog.showModal();
-  };
-
-  deleteDialog.addEventListener('close', () => {
-    const res = deleteDialog.returnValue;
-    deleteDialog.returnValue = '';
-    const ctx = pendingDelete; pendingDelete = null;
-    if (res !== 'confirm' || !ctx) return;
-    const i = issues.find((x) => x.id === ctx.id);
-    if (!i) return;
-    issues = issues.filter((x) => x.id !== ctx.id);
-    save(issues); renderAll(); announce(`Deleted report ${i.id} (${i.type} at ${i.location}).`);
-    if (ctx.src === 'queue') (queueList.querySelector('.btn-danger') || $('filter-severity')).focus();
-    else (recordsTbody.querySelector('.btn-danger') || $('tab-records')).focus();
-  });
-
-  function renderAll() {
-    const active = issues.filter((i) => i.status !== 'Resolved').length;
-    $('queue-count').textContent = `(${active})`;
-    $('records-count').textContent = `(${issues.length - active})`;
-    renderQueue();
-    renderRecords();
+resolveDialog.addEventListener('close', function () {
+  const ans = resolveDialog.returnValue;
+  resolveDialog.returnValue = '';
+  for (let i = 0; i < issues.length; i++) {
+    if (issues[i].id === resolveId) {
+      if (ans === 'confirm') {
+        issues[i].status = 'Resolved';
+        issues[i].resolutionNote = document.getElementById('resolution-note').value.trim();
+        issues[i].resolvedDate = today();
+        save();
+        renderAll();
+        banner.textContent = 'Moved ' + issues[i].id + ' to Resolution Records.';
+      } else if (resolveSelect) {
+        resolveSelect.value = issues[i].status;
+      }
+      break;
+    }
   }
+  resolveId = null;
+  resolveSelect = null;
+});
 
-  $('filter-severity').addEventListener('change', renderQueue);
-  $('filter-status').addEventListener('change', renderQueue);
+function openDelete(issue) {
+  deleteId = issue.id;
+  document.getElementById('delete-summary').textContent = 'Delete ' + issue.type + ' at ' + issue.location + '?';
+  deleteDialog.returnValue = '';
+  deleteDialog.showModal();
+}
 
-  issues = load();
-  renderAll();
-})();
+deleteDialog.addEventListener('close', function () {
+  if (deleteDialog.returnValue === 'confirm' && deleteId) {
+    issues = issues.filter(function (i) { return i.id !== deleteId; });
+    save();
+    renderAll();
+    banner.textContent = 'Report deleted.';
+  }
+  deleteDialog.returnValue = '';
+  deleteId = null;
+});
+
+function renderAll() {
+  const activeCount = issues.filter(function (i) { return i.status !== 'Resolved'; }).length;
+  document.getElementById('queue-count').textContent = activeCount;
+  document.getElementById('records-count').textContent = issues.length - activeCount;
+  renderQueue();
+  renderRecords();
+}
+
+document.getElementById('filter-severity').addEventListener('change', renderQueue);
+document.getElementById('filter-status').addEventListener('change', renderQueue);
+
+load();
+renderAll();
