@@ -1,20 +1,17 @@
 const KEY = 'road_issues_data';
 const CREWS = ['Unassigned', 'Road Crew A', 'Signal Team B', 'Maintenance Team C'];
 const STATUSES = ['Reported', 'Assigned', 'In Progress', 'Resolved'];
+const RANK = { High: 1, Medium: 2, Low: 3 };
 
-const form = document.getElementById('report-form');
-const banner = document.getElementById('status-banner');
-const queueList = document.getElementById('queue-list');
-const recordsTbody = document.getElementById('records-tbody');
-const resolveDialog = document.getElementById('resolve-dialog');
-const deleteDialog = document.getElementById('delete-dialog');
-const tabButtons = document.querySelectorAll('[role="tab"]');
+const $ = (id) => document.getElementById(id);
+const form = $('report-form');
+const banner = $('status-banner');
+const resolveDialog = $('resolve-dialog');
+const tabs = [...document.querySelectorAll('[role="tab"]')];
 
 let issues = [];
 let photoData = '';
-let resolveId = null;
-let resolveSelect = null;
-let deleteId = null;
+let resolveTarget = null;
 
 function starterData() {
   return [
@@ -25,7 +22,8 @@ function starterData() {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 function make(tag, text, cls) {
@@ -35,148 +33,136 @@ function make(tag, text, cls) {
   return el;
 }
 
-function save() {
-  localStorage.setItem(KEY, JSON.stringify(issues));
-}
-
-function load() {
-  const saved = localStorage.getItem(KEY);
-  if (!saved) {
-    issues = starterData();
-    save();
-  } else {
-    issues = JSON.parse(saved);
-  }
-}
-
-// Tabs
-function openTab(target) {
-  for (let i = 0; i < tabButtons.length; i++) {
-    const btn = tabButtons[i];
-    const on = btn === target;
-    btn.setAttribute('aria-selected', on ? 'true' : 'false');
-    btn.tabIndex = on ? 0 : -1;
-    document.getElementById(btn.getAttribute('aria-controls')).hidden = !on;
-  }
-}
-
-for (let i = 0; i < tabButtons.length; i++) {
-  tabButtons[i].addEventListener('click', function () {
-    openTab(this);
-  });
-  tabButtons[i].addEventListener('keydown', function (e) {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    e.preventDefault();
-    const next = e.key === 'ArrowRight' ? (i + 1) % tabButtons.length : (i - 1 + tabButtons.length) % tabButtons.length;
-    openTab(tabButtons[next]);
-    tabButtons[next].focus();
-  });
-}
-
-// GPS & Photo
-document.getElementById('gps-btn').addEventListener('click', function () {
-  if (!navigator.geolocation) return (banner.textContent = 'GPS not supported.');
-  navigator.geolocation.getCurrentPosition(
-    function (pos) {
-      document.getElementById('issue-location').value = pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4);
-      banner.textContent = 'GPS location added.';
-    },
-    function () { banner.textContent = 'Could not get GPS location.'; }
-  );
-});
-
-function clearPhoto() {
-  photoData = '';
-  document.getElementById('issue-photo').value = '';
-  document.getElementById('photo-img').removeAttribute('src');
-  document.getElementById('photo-preview').hidden = true;
-}
-
-document.getElementById('issue-photo').addEventListener('change', function () {
-  const file = this.files[0];
-  if (!file) return clearPhoto();
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    photoData = e.target.result;
-    document.getElementById('photo-img').src = photoData;
-    document.getElementById('photo-caption').textContent = file.name;
-    document.getElementById('photo-preview').hidden = false;
-  };
-  reader.readAsDataURL(file);
-});
-
-document.getElementById('remove-photo-btn').addEventListener('click', clearPhoto);
-form.addEventListener('reset', clearPhoto);
-
-// Submit Issue
-form.addEventListener('submit', function (e) {
-  e.preventDefault();
-  const sev = document.querySelector('input[name="severity"]:checked').value;
-  issues.unshift({
-    id: 'ISS-' + Date.now().toString().slice(-4),
-    type: document.getElementById('issue-type').value,
-    location: document.getElementById('issue-location').value.trim(),
-    severity: sev,
-    description: document.getElementById('issue-description').value.trim(),
-    photo: photoData,
-    status: 'Reported',
-    crew: 'Unassigned',
-    reportedDate: today(),
-    resolutionNote: '',
-    resolvedDate: ''
-  });
-  save();
-  form.reset();
-  renderAll();
-  openTab(document.getElementById('tab-queue'));
-  banner.textContent = 'Issue submitted to Priority Queue.';
-});
-
-function makeSelect(id, labelText, list, current) {
-  const wrap = make('div');
-  const label = make('label', labelText);
-  label.htmlFor = id;
-  const select = make('select');
-  select.id = id;
-  for (let i = 0; i < list.length; i++) {
-    const opt = make('option', list[i]);
-    opt.value = list[i];
-    if (list[i] === current) opt.selected = true;
-    select.appendChild(opt);
-  }
-  wrap.append(label, select);
-  return { wrap: wrap, select: select };
-}
-
 function makeTime(dateStr) {
   const t = make('time', dateStr);
   t.setAttribute('datetime', dateStr);
   return t;
 }
 
-// Render Queue
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(issues));
+    return true;
+  } catch {
+    banner.textContent = 'Storage full. Please use a smaller photo.';
+    return false;
+  }
+}
+
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY));
+    if (Array.isArray(saved)) { issues = saved; return; }
+  } catch { /* fall back to starter */ }
+  issues = starterData();
+  save();
+}
+
+function commit(msg) {
+  save();
+  renderAll();
+  banner.textContent = msg;
+}
+
+// Tabs
+function openTab(target) {
+  tabs.forEach((btn) => {
+    const on = btn === target;
+    btn.setAttribute('aria-selected', String(on));
+    btn.tabIndex = on ? 0 : -1;
+    $(btn.getAttribute('aria-controls')).hidden = !on;
+  });
+}
+
+tabs.forEach((btn, i) => {
+  btn.addEventListener('click', () => openTab(btn));
+  btn.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+    openTab(next);
+    next.focus();
+  });
+});
+
+// Photo preview
+$('issue-photo').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file || !file.type.startsWith('image/')) {
+    photoData = '';
+    $('photo-preview').hidden = true;
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    photoData = e.target.result;
+    $('photo-img').src = photoData;
+    $('photo-caption').textContent = file.name;
+    $('photo-preview').hidden = false;
+  };
+  reader.readAsDataURL(file);
+});
+
+// Submit issue
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const nextNum = issues.reduce((m, x) => Math.max(m, Number(x.id.replace('ISS-', '')) || 0), 0) + 1;
+  const issue = {
+    id: 'ISS-' + nextNum,
+    type: $('issue-type').value,
+    location: $('issue-location').value.trim(),
+    severity: document.querySelector('input[name="severity"]:checked').value,
+    description: $('issue-description').value.trim(),
+    photo: photoData,
+    status: 'Reported',
+    crew: 'Unassigned',
+    reportedDate: today(),
+    resolutionNote: '',
+    resolvedDate: ''
+  };
+
+  issues.unshift(issue);
+  if (!save()) { issues.shift(); return; }
+  photoData = '';
+  $('photo-preview').hidden = true;
+  form.reset();
+  renderAll();
+  openTab($('tab-queue'));
+  banner.textContent = 'Issue ' + issue.id + ' submitted to Priority Queue.';
+});
+
+function makeSelect(id, labelText, list, current, onChange) {
+  const wrap = make('div');
+  const label = make('label', labelText);
+  label.htmlFor = id;
+  const select = make('select');
+  select.id = id;
+  list.forEach((v) => {
+    const opt = make('option', v);
+    opt.value = v;
+    if (v === current) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.addEventListener('change', () => onChange(select));
+  wrap.append(label, select);
+  return wrap;
+}
+
+// Priority Queue
 function renderQueue() {
-  const sevFilter = document.getElementById('filter-severity').value;
-  const statFilter = document.getElementById('filter-status').value;
-  const rank = { High: 1, Medium: 2, Low: 3 };
+  const sevF = $('filter-severity').value;
+  const statF = $('filter-status').value;
+  const list = $('queue-list');
 
   const active = issues
-    .filter(function (i) {
-      return i.status !== 'Resolved' &&
-        (sevFilter === 'All' || i.severity === sevFilter) &&
-        (statFilter === 'All' || i.status === statFilter);
-    })
-    .sort(function (a, b) {
-      return rank[a.severity] - rank[b.severity] || b.reportedDate.localeCompare(a.reportedDate);
-    });
+    .filter((i) => i.status !== 'Resolved' && (sevF === 'All' || i.severity === sevF) && (statF === 'All' || i.status === statF))
+    .sort((a, b) => RANK[a.severity] - RANK[b.severity] || b.reportedDate.localeCompare(a.reportedDate));
 
-  queueList.innerHTML = '';
-  document.getElementById('queue-empty').hidden = active.length > 0;
+  list.textContent = '';
+  $('queue-empty').hidden = active.length > 0;
 
-  for (let i = 0; i < active.length; i++) {
-    const issue = active[i];
+  active.forEach((issue) => {
     const card = make('article', '', 'box');
-
     card.append(
       make('h3', issue.type + ' - ' + issue.location),
       make('span', issue.severity, 'badge ' + issue.severity.toLowerCase()),
@@ -184,17 +170,14 @@ function renderQueue() {
     );
 
     const dl = make('dl');
-    const fields = [['ID', issue.id], ['Location', issue.location], ['Status', issue.status], ['Crew', issue.crew]];
-    for (let j = 0; j < fields.length; j++) {
+    [['Location', issue.location], ['Status', issue.status], ['Crew', issue.crew], ['Reported', makeTime(issue.reportedDate)]].forEach(([k, v]) => {
       const box = make('div');
-      box.append(make('dt', fields[j][0]), make('dd', fields[j][1]));
+      const dd = make('dd');
+      if (typeof v === 'string') dd.textContent = v;
+      else dd.appendChild(v);
+      box.append(make('dt', k), dd);
       dl.appendChild(box);
-    }
-    const dateBox = make('div');
-    const ddTime = make('dd');
-    ddTime.appendChild(makeTime(issue.reportedDate));
-    dateBox.append(make('dt', 'Reported'), ddTime);
-    dl.appendChild(dateBox);
+    });
     card.appendChild(dl);
 
     if (issue.photo) {
@@ -207,49 +190,39 @@ function renderQueue() {
     }
 
     const row = make('div', '', 'row');
-    const crewSel = makeSelect('assign-' + issue.id, 'Work Assignment', CREWS, issue.crew);
-    crewSel.select.addEventListener('change', function () {
-      issue.crew = this.value;
-      if (issue.crew !== 'Unassigned' && issue.status === 'Reported') issue.status = 'Assigned';
-      save();
-      renderAll();
-      banner.textContent = 'Assigned ' + issue.id + ' to ' + issue.crew + '.';
-    });
-
-    const statSel = makeSelect('status-' + issue.id, 'Status', STATUSES, issue.status);
-    statSel.select.addEventListener('change', function () {
-      if (this.value === 'Resolved') return openResolve(issue, this);
-      issue.status = this.value;
-      save();
-      renderAll();
-      banner.textContent = 'Updated ' + issue.id + ' status to ' + issue.status + '.';
-    });
-
     const resBtn = make('button', 'Mark Resolved', 'blue');
     resBtn.type = 'button';
-    resBtn.addEventListener('click', function () { openResolve(issue, null); });
+    resBtn.addEventListener('click', () => openResolve(issue, null));
 
-    const delBtn = make('button', 'Delete', 'red');
-    delBtn.type = 'button';
-    delBtn.addEventListener('click', function () { openDelete(issue); });
-
-    row.append(crewSel.wrap, statSel.wrap, resBtn, delBtn);
+    row.append(
+      makeSelect('assign-' + issue.id, 'Work Assignment', CREWS, issue.crew, (s) => {
+        issue.crew = s.value;
+        if (issue.crew !== 'Unassigned' && issue.status === 'Reported') issue.status = 'Assigned';
+        else if (issue.crew === 'Unassigned' && issue.status === 'Assigned') issue.status = 'Reported';
+        commit('Assigned ' + issue.id + ' to ' + issue.crew + '.');
+      }),
+      makeSelect('status-' + issue.id, 'Status', STATUSES, issue.status, (s) => {
+        if (s.value === 'Resolved') return openResolve(issue, s);
+        issue.status = s.value;
+        commit('Updated ' + issue.id + ' status to ' + issue.status + '.');
+      }),
+      resBtn
+    );
     card.appendChild(row);
-    queueList.appendChild(card);
-  }
+    list.appendChild(card);
+  });
 }
 
-// Render Records Table
+// Resolution Records
 function renderRecords() {
-  const done = issues.filter(function (i) { return i.status === 'Resolved'; });
-  recordsTbody.innerHTML = '';
-  document.getElementById('records-box').hidden = done.length === 0;
-  document.getElementById('records-empty').hidden = done.length > 0;
+  const tbody = $('records-tbody');
+  const done = issues.filter((i) => i.status === 'Resolved').sort((a, b) => b.resolvedDate.localeCompare(a.resolvedDate));
+  tbody.textContent = '';
+  $('records-box').hidden = done.length === 0;
+  $('records-empty').hidden = done.length > 0;
 
-  for (let i = 0; i < done.length; i++) {
-    const issue = done[i];
+  done.forEach((issue) => {
     const tr = make('tr');
-
     const photoTd = make('td');
     if (issue.photo) {
       const img = make('img', '', 'thumb');
@@ -259,81 +232,49 @@ function renderRecords() {
     } else {
       photoTd.textContent = 'No photo';
     }
-
     const dateTd = make('td');
     dateTd.appendChild(makeTime(issue.resolvedDate));
-
-    const delTd = make('td');
-    const delBtn = make('button', 'Delete', 'red');
-    delBtn.type = 'button';
-    delBtn.addEventListener('click', function () { openDelete(issue); });
-    delTd.appendChild(delBtn);
-
-    tr.append(make('td', issue.type), make('td', issue.location), photoTd, make('td', issue.crew), make('td', issue.resolutionNote), dateTd, delTd);
-    recordsTbody.appendChild(tr);
-  }
+    tr.append(make('td', issue.type), make('td', issue.location), photoTd, make('td', issue.crew), make('td', issue.resolutionNote), dateTd);
+    tbody.appendChild(tr);
+  });
 }
 
-// Dialogs
-function openResolve(issue, sel) {
-  resolveId = issue.id;
-  resolveSelect = sel;
-  document.getElementById('resolve-summary').textContent = issue.type + ' - ' + issue.location;
-  document.getElementById('resolution-note').value = '';
+// Resolve dialog
+function openResolve(issue, selectEl) {
+  resolveTarget = { issue, selectEl };
+  $('resolve-summary').textContent = issue.type + ' - ' + issue.location;
+  $('resolution-note').value = '';
   resolveDialog.returnValue = '';
   resolveDialog.showModal();
 }
 
-resolveDialog.addEventListener('close', function () {
+resolveDialog.addEventListener('close', () => {
   const ans = resolveDialog.returnValue;
   resolveDialog.returnValue = '';
-  for (let i = 0; i < issues.length; i++) {
-    if (issues[i].id === resolveId) {
-      if (ans === 'confirm') {
-        issues[i].status = 'Resolved';
-        issues[i].resolutionNote = document.getElementById('resolution-note').value.trim();
-        issues[i].resolvedDate = today();
-        save();
-        renderAll();
-        banner.textContent = 'Moved ' + issues[i].id + ' to Resolution Records.';
-      } else if (resolveSelect) {
-        resolveSelect.value = issues[i].status;
-      }
-      break;
-    }
-  }
-  resolveId = null;
-  resolveSelect = null;
-});
+  if (!resolveTarget) return;
+  const { issue, selectEl } = resolveTarget;
+  resolveTarget = null;
 
-function openDelete(issue) {
-  deleteId = issue.id;
-  document.getElementById('delete-summary').textContent = 'Delete ' + issue.type + ' at ' + issue.location + '?';
-  deleteDialog.returnValue = '';
-  deleteDialog.showModal();
-}
-
-deleteDialog.addEventListener('close', function () {
-  if (deleteDialog.returnValue === 'confirm' && deleteId) {
-    issues = issues.filter(function (i) { return i.id !== deleteId; });
-    save();
-    renderAll();
-    banner.textContent = 'Report deleted.';
+  if (ans === 'confirm') {
+    issue.status = 'Resolved';
+    issue.resolutionNote = $('resolution-note').value.trim();
+    issue.resolvedDate = today();
+    commit('Moved ' + issue.id + ' to Resolution Records.');
+  } else if (selectEl) {
+    selectEl.value = issue.status;
   }
-  deleteDialog.returnValue = '';
-  deleteId = null;
 });
 
 function renderAll() {
-  const activeCount = issues.filter(function (i) { return i.status !== 'Resolved'; }).length;
-  document.getElementById('queue-count').textContent = activeCount;
-  document.getElementById('records-count').textContent = issues.length - activeCount;
+  const activeCount = issues.filter((i) => i.status !== 'Resolved').length;
+  $('queue-count').textContent = activeCount;
+  $('records-count').textContent = issues.length - activeCount;
   renderQueue();
   renderRecords();
 }
 
-document.getElementById('filter-severity').addEventListener('change', renderQueue);
-document.getElementById('filter-status').addEventListener('change', renderQueue);
+$('filter-severity').addEventListener('change', renderQueue);
+$('filter-status').addEventListener('change', renderQueue);
 
 load();
 renderAll();

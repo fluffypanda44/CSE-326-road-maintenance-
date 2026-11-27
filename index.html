@@ -40,10 +40,7 @@
           </select>
 
           <label for="issue-location">Location</label>
-          <div class="row">
-            <input type="text" id="issue-location" name="location" required minlength="3" placeholder="Street or landmark">
-            <button type="button" id="gps-btn">Use GPS</button>
-          </div>
+          <input type="text" id="issue-location" name="location" required minlength="3" placeholder="Street or landmark">
         </fieldset>
 
         <fieldset>
@@ -63,14 +60,10 @@
           <figure id="photo-preview" hidden>
             <img id="photo-img" alt="Uploaded road issue preview" width="240" height="160">
             <figcaption id="photo-caption">Photo preview</figcaption>
-            <button type="button" id="remove-photo-btn">Remove</button>
           </figure>
         </fieldset>
 
-        <div class="row">
-          <button type="submit" class="blue">Submit Issue</button>
-          <button type="reset">Clear</button>
-        </div>
+        <button type="submit" class="blue">Submit Issue</button>
       </form>
     </section>
 
@@ -113,7 +106,6 @@
               <th scope="col">Assigned Crew</th>
               <th scope="col">Resolution Note</th>
               <th scope="col">Resolved Date</th>
-              <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody id="records-tbody"></tbody>
@@ -123,9 +115,7 @@
     </section>
   </main>
 
-  <footer>
-    <p>Road Maintenance Platform</p>
-  </footer>
+  <footer>Road Maintenance Platform</footer>
 
   <dialog id="resolve-dialog" aria-labelledby="resolve-title">
     <h2 id="resolve-title">Resolve Issue</h2>
@@ -133,20 +123,9 @@
     <form method="dialog">
       <label for="resolution-note">Resolution Note</label>
       <textarea id="resolution-note" name="resolutionNote" rows="3" required minlength="3" autofocus></textarea>
-      <div class="row">
+      <div class="row dialog-btns">
         <button type="submit" value="cancel" formnovalidate>Cancel</button>
         <button type="submit" value="confirm" class="blue">Save</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="delete-dialog" aria-labelledby="delete-title">
-    <h2 id="delete-title">Delete Report</h2>
-    <p id="delete-summary"></p>
-    <form method="dialog">
-      <div class="row">
-        <button type="submit" value="cancel" autofocus>Cancel</button>
-        <button type="submit" value="confirm" class="red">Delete</button>
       </div>
     </form>
   </dialog>
